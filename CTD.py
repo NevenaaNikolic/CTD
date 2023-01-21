@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import logging
+import sys
 from sklearn import covariance
 from collections import Counter
 from multiprocessing import Pool
@@ -22,6 +23,7 @@ p.add_argument("--adj_matrix", help="CSV with adjacency matrix.", default='')  #
 p.add_argument("--s_module",
                help="Comma-separated list or path to CSV of graph G nodes to consider when searching for the most "
                     "connected subgraph.")
+p.add_argument("--ranks", help="JSON with precalculated node ranks.", default='')
 p.add_argument("--include_not_in_s",
                help="Include the nodes not appearing in S (encoded with a zero in the optimal bitstring) "
                     "in the most connected subgraph. These are excluded by default.", action="count")
@@ -41,7 +43,10 @@ if __name__ == '__main__':
     argv = p.parse_args()
 
     if argv.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        logging.basicConfig(stream = sys.stdout,
+                            format = "%(levelname)s %(asctime)s - %(message)s",
+                            level = logging.DEBUG)
+        logging.getLogger()
 
     # Read input dataframe with experimental (positive, disease) samples
     if os.path.exists(argv.experimental):
@@ -118,25 +123,28 @@ if __name__ == '__main__':
     logging.debug('Get the single-node encoding node ranks starting from each node.')
 
     # Dictionary ranks contains encodings for each node in S_perturbed_nodes
-    ranks = {}
-
-    # If num_processes is set to 1, standard for loop will be used instead of creating multiprocessing pool with a
-    # single process to avoid overhead
-    if argv.num_processes == 1:
-        for node in S_perturbed_nodes:
-            ranks[node], _ = graph.single_node_get_node_ranks(n=node, G=G, p1=1.0, threshold_diff=0.01, adj_mat=adj_df,
-                                                              S=S_perturbed_nodes, num_misses=np.log2(len(G)),
-                                                              verbose=argv.verbose)
+    if os.path.exists(argv.ranks):
+        with open(argv.ranks, 'r') as f:
+            ranks = json.load(f)
     else:
-        pool = Pool(argv.num_processes)
-        ranks_collection = pool.map(partial(graph.single_node_get_node_ranks, G=G, p1=1.0, threshold_diff=0.01,
-                                            adj_mat=adj_df, S=S_perturbed_nodes, num_misses=np.log2(len(G)),
-                                            verbose=argv.verbose), S_perturbed_nodes)
-        pool.close()
-        pool.join()
+        ranks = {}
+        # If num_processes is set to 1, standard for loop will be used instead of creating multiprocessing pool with a
+        # single process to avoid overhead
+        if argv.num_processes == 1:
+            for node in S_perturbed_nodes:
+                ranks[node], _ = graph.single_node_get_node_ranks(n=node, G=G, p1=1.0, threshold_diff=0.01, adj_mat=adj_df,
+                                                                  S=S_perturbed_nodes, num_misses=np.log2(len(G)),
+                                                                  verbose=argv.verbose)
+        else:
+            pool = Pool(argv.num_processes)
+            ranks_collection = pool.map(partial(graph.single_node_get_node_ranks, G=G, p1=1.0, threshold_diff=0.01,
+                                                adj_mat=adj_df, S=S_perturbed_nodes, num_misses=np.log2(len(G)),
+                                                verbose=argv.verbose), S_perturbed_nodes)
+            pool.close()
+            pool.join()
 
-        for tup in ranks_collection:
-            ranks[tup[1]] = tup[0]
+            for tup in ranks_collection:
+                ranks[tup[1]] = tup[0]
 
     # Convert to bitstring
     # Get the bitstring associated with the disease module's metabolites
