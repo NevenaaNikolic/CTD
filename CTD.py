@@ -43,7 +43,7 @@ if __name__ == '__main__':
     argv = p.parse_args()
 
     if argv.verbose:
-        logging.basicConfig(stream = sys.stdout,
+        logging.basicConfig(stream = sys.stderr,
                             format = "%(levelname)s %(asctime)s - %(message)s",
                             level = logging.DEBUG)
         logging.getLogger()
